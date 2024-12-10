@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 from main import app
+import time
+
 
 client = TestClient(app)
 
@@ -87,3 +89,73 @@ def test_cors():
     assert response.status_code == 200
     assert "Access-Control-Allow-Origin" in response.headers
     assert response.headers["Access-Control-Allow-Origin"] == "*"
+
+def test_create_user_missing_field():
+    response = client.post(
+        "/register/",
+        json={"username": "testuser", "email": "testuser@example.com"},
+    )
+    assert response.status_code == 422
+    data = response.json()
+    assert "detail" in data
+    assert data["detail"][0]["msg"] == "field required"
+
+def test_create_user_duplicate_username():
+    # Создаем пользователя для теста
+    response = client.post(
+        "/register/",
+        json={"username": "testuser", "email": "testuser@example.com", "full_name": "Test User", "password": "password123"},
+    )
+    assert response.status_code == 200
+
+    # Повторная регистрация с тем же username
+    response = client.post(
+        "/register/",
+        json={"username": "testuser", "email": "testuser2@example.com", "full_name": "Test User 2", "password": "password123"},
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert "detail" in data
+    assert data["detail"] == "Username or Email already registered"
+
+def test_create_user_duplicate_email():
+    # Создаем пользователя для теста
+    response = client.post(
+        "/register/",
+        json={"username": "testuser", "email": "testuser@example.com", "full_name": "Test User", "password": "password123"},
+    )
+    assert response.status_code == 200
+
+    # Повторная регистрация с тем же email
+    response = client.post(
+        "/register/",
+        json={"username": "testuser2", "email": "testuser@example.com", "full_name": "Test User 2", "password": "password123"},
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert "detail" in data
+    assert data["detail"] == "Username or Email already registered"
+
+def test_performance():
+    start_time = time.time()
+    for _ in range(100):
+        response = client.get("/users/")
+        assert response.status_code == 200
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    assert elapsed_time < 5  # Убедитесь, что время отклика меньше 5 секунд для 100 запросов
+
+def test_unauthorized_access():
+    response = client.get("/users/me")
+    assert response.status_code == 401
+    data = response.json()
+    assert "detail" in data
+    assert data["detail"] == "Could not validate credentials"
+
+def test_invalid_token():
+    headers = {"Authorization": "Bearer invalid_token"}
+    response = client.get("/users/me", headers=headers)
+    assert response.status_code == 401
+    data = response.json()
+    assert "detail" in data
+    assert data["detail"] == "Could not validate credentials"
